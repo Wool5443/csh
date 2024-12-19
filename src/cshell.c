@@ -247,13 +247,10 @@ ResultString cleanInterpreterComment(const char path[static 1])
     file = fileResult.value;
 
     char* commentPtr = strstr(file.data, "#!");
-
     if (commentPtr)
     {
-        while (*commentPtr && *commentPtr != '\n')
-        {
-            *commentPtr++ = ' ';
-        }
+        commentPtr[0] = '/';
+        commentPtr[1] = '/';
     }
 
     CHECK_ERROR(StringAppend(&newFilePath, TEMP_FOLDER.data));
