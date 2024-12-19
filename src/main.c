@@ -6,7 +6,7 @@ int main(int argc, const char* argv[])
 {
     ERROR_CHECKING();
 
-    LoggerInitConsole();
+    // LoggerDisable();
 
     if (argc < 2)
     {
@@ -16,7 +16,7 @@ int main(int argc, const char* argv[])
 
     LoggerFinish();
 
-    CHECK_ERROR(CompileAndRunFile(argv[1], argv + 2, argv[0]));
+    CHECK_ERROR(CompileAndRunFile(argv[1], argv + 2));
 
 ERROR_CASE
 

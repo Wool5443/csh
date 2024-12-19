@@ -22,9 +22,9 @@ ResultArgsList argsListCtor(const char outputPath[static 1], const char* args[])
 ErrorCode compile(ArgsList compileArgs);
 ErrorCode run(ArgsList runArgs);
 ErrorCode delete(const char path[static 1]);
-ResultString cleanScriptRunnerComment(const char path[static 1], const char cshellPath[static 1]);
+ResultString cleanInterpreterComment(const char path[static 1]);
 
-ErrorCode CompileAndRunFile(const char path[static 1], const char* args[], const char cshellPath[static 1])
+ErrorCode CompileAndRunFile(const char path[static 1], const char* args[])
 {
     ERROR_CHECKING();
 
@@ -39,7 +39,7 @@ ErrorCode CompileAndRunFile(const char path[static 1], const char* args[], const
     CHECK_ERROR(sourcePathResult.errorCode);
     sourcePath = sourcePathResult.value;
 
-    ResultString cleanSourcePathResult = cleanScriptRunnerComment(path, cshellPath);
+    ResultString cleanSourcePathResult = cleanInterpreterComment(path);
     CHECK_ERROR(cleanSourcePathResult.errorCode);
     cleanSourcePath = cleanSourcePathResult.value;
 
@@ -232,57 +232,41 @@ ERROR_CASE
     return err;
 }
 
-ResultString cleanScriptRunnerComment(const char path[static 1], const char cshellPath[static 1])
+ResultString cleanInterpreterComment(const char path[static 1])
 {
     ERROR_CHECKING();
 
     assert(path);
 
     String file = {};
-    String cshell = {};
-    String comment = {};
-    String newFile = {};
+    String newFilePath = {};
     FILE* outFile = NULL;
-
-    ResultString cshellResult = sanitizeFilePath(cshellPath);
-    CHECK_ERROR(cshellResult.errorCode);
-    cshell = cshellResult.value;
 
     ResultString fileResult = StringReadFile(path);
     CHECK_ERROR(fileResult.errorCode);
     file = fileResult.value;
 
-    ResultString commentResult = StringCtor("#!");
-    CHECK_ERROR(commentResult.errorCode);
-    comment = commentResult.value;
-
-    CHECK_ERROR(StringAppendString(&comment, cshell));
-
-    char* commentPtr = strstr(file.data, comment.data);
+    char* commentPtr = strstr(file.data, "#!");
 
     if (commentPtr)
     {
-        for (size_t i = 0; i < comment.size; i++)
+        while (*commentPtr && *commentPtr != '\n')
         {
-            file.data[i] = ' ';
+            *commentPtr++ = ' ';
         }
     }
 
-    newFile = cshell;
-    cshell = (String){};
+    CHECK_ERROR(StringAppend(&newFilePath, TEMP_FOLDER.data));
+    CHECK_ERROR(StringAppend(&newFilePath, path));
 
-    StringClear(&newFile);
-    CHECK_ERROR(StringAppend(&newFile, TEMP_FOLDER.data));
-    CHECK_ERROR(StringAppend(&newFile, path));
-
-    char* slash = strchr(newFile.data + TEMP_FOLDER.size, '/');
+    char* slash = strchr(newFilePath.data + TEMP_FOLDER.size, '/');
     while (slash)
     {
         *slash = '*';
         slash = strchr(slash + 1, '/');
     }
 
-    outFile = fopen(newFile.data, "w");
+    outFile = fopen(newFilePath.data, "w");
     if (!outFile)
     {
         HANDLE_ERRNO_ERROR("Error fopen: %s");
@@ -291,16 +275,14 @@ ResultString cleanScriptRunnerComment(const char path[static 1], const char cshe
 
 ERROR_CASE
     StringDtor(&file);
-    StringDtor(&cshell);
-    StringDtor(&comment);
     if (outFile) fclose(outFile);
 
     if (err == EVERYTHING_FINE)
     {
-        return ResultStringCtor(newFile, EVERYTHING_FINE);
+        return ResultStringCtor(newFilePath, EVERYTHING_FINE);
     }
 
-    StringDtor(&newFile);
+    StringDtor(&newFilePath);
 
     return ResultStringCtor((String){}, err);
 }

@@ -1,4 +1,4 @@
-#!/home/twenty/Programming/csh/build/cshell
+#!/usr/bin/csh
 
 #include <stdio.h>
 
