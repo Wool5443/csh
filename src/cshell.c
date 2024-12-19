@@ -1,50 +1,154 @@
-#include <unistd.h>
 #include <limits.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <unistd.h>
 
-#include "ScratchBuf.h"
 #include "cshell.h"
+#include "Logger.h"
+#include "Vector.h"
+#include "String.h"
+
+typedef const char** ArgsList;
+DECLARE_RESULT(ArgsList);
+
+typedef const char* Path;
+DECLARE_RESULT(Path);
 
 static const Str TEMP_FOLDER = { "/tmp/", strlen(TEMP_FOLDER.data) };
 
-ResultString sanitizeDirectoryPath(const char path[static 1]);
+ResultString sanitizeFilePath(const char path[static 1]);
 const char* getCompiler();
+ResultArgsList argsListCtor(const char outputPath[static 1], const char* args[]);
+ErrorCode compile(ArgsList compileArgs);
+ErrorCode run(ArgsList runArgs);
+ErrorCode delete(const char path[static 1]);
+ResultString cleanScriptRunnerComment(const char path[static 1], const char cshellPath[static 1]);
 
-ErrorCode CompileFile(const char path[static 1])
+ErrorCode CompileAndRunFile(const char path[static 1], const char* args[], const char cshellPath[static 1])
 {
     ERROR_CHECKING();
 
     assert(path);
 
-    String goodPath = {};
+    String sourcePath = {};
+    String cleanSourcePath = {};
     String outputPath = {};
+    ArgsList runArgs = {};
 
-    ResultString goodPathResult = sanitizeDirectoryPath(path);
-    CHECK_ERROR(goodPathResult.errorCode);
-    goodPath = goodPathResult.value;
+    ResultString sourcePathResult = sanitizeFilePath(path);
+    CHECK_ERROR(sourcePathResult.errorCode);
+    sourcePath = sourcePathResult.value;
+
+    ResultString cleanSourcePathResult = cleanScriptRunnerComment(path, cshellPath);
+    CHECK_ERROR(cleanSourcePathResult.errorCode);
+    cleanSourcePath = cleanSourcePathResult.value;
 
     ResultString outputPathResult = StringCtorFromStr(TEMP_FOLDER);
     CHECK_ERROR(outputPathResult.errorCode);
     outputPath = outputPathResult.value;
 
-    CHECK_ERROR(StringAppendString(&outputPath, goodPath));
+    CHECK_ERROR(StringAppendString(&outputPath, sourcePath));
+    CHECK_ERROR(StringAppend(&outputPath, ".exe"));
 
-    char* slash = strchr(outputPath.data + TEMP_FOLDER.size, '\\');
+    char* slash = strchr(outputPath.data + TEMP_FOLDER.size, '/');
     while (slash)
     {
         *slash = '*';
-        slash = strchr(slash + 1, '\\');
+        slash = strchr(slash + 1, '/');
     }
 
     const char* compileArgs[] = {
         getCompiler(),
-        goodPath.data,
+        cleanSourcePath.data,
         "-O3",
         "-o",
         outputPath.data,
         NULL,
     };
+
+    ResultArgsList runArgsResult = argsListCtor(outputPath.data, args);
+    CHECK_ERROR(runArgsResult.errorCode);
+    runArgs = runArgsResult.value;
+
+    CHECK_ERROR(compile(compileArgs));
+    CHECK_ERROR(run(runArgs));
+    CHECK_ERROR(delete(outputPath.data));
+    CHECK_ERROR(delete(cleanSourcePath.data));
+
+ERROR_CASE
+    VecDtor(runArgs);
+    StringDtor(&sourcePath);
+    StringDtor(&outputPath);
+    StringDtor(&cleanSourcePath);
+
+    return err;
+}
+
+ResultString sanitizeFilePath(const char path[static 1])
+{
+    ERROR_CHECKING();
+
+    assert(path);
+
+    char goodPath[PATH_MAX + 1] = "";
+
+    if (!realpath(path, goodPath))
+    {
+        HANDLE_ERRNO_ERROR("Error realpath for %s: %s", path);
+    }
+
+    return StringCtorFromStr(StrCtorSize(goodPath, strlen(goodPath)));
+
+ERROR_CASE
+    return ResultStringCtor((String){}, err);
+}
+
+const char* getCompiler()
+{
+    ERROR_CHECKING();
+
+    const char* compiler = getenv("CC");
+    if (!compiler)
+    {
+        HANDLE_ERRNO_ERROR("Error getenv $(CC): %s");
+    }
+
+ERROR_CASE
+    return compiler;
+}
+
+ResultArgsList argsListCtor(const char outputPath[static 1], const char* args[])
+{
+    ERROR_CHECKING();
+
+    assert(args);
+
+    ArgsList list = {};
+
+    const char** arg = args;
+    CHECK_ERROR(VecAdd(list, outputPath));
+
+    while (*arg)
+    {
+        CHECK_ERROR(VecAdd(list, *arg), "Error adding arg: %s", *arg);
+        arg++;
+    }
+    CHECK_ERROR(VecAdd(list, NULL), "Error adding NULL");
+
+    return ResultArgsListCtor(list, EVERYTHING_FINE);
+
+ERROR_CASE
+    VecDtor(list);
+
+    return ResultArgsListCtor((ArgsList){}, err);
+}
+
+ErrorCode compile(ArgsList compileArgs)
+{
+    ERROR_CHECKING();
+
+    assert(compileArgs);
+
     pid_t compile = vfork();
 
     if (compile == -1)
@@ -63,10 +167,16 @@ ErrorCode CompileFile(const char path[static 1])
         HANDLE_ERRNO_ERROR("Error wait: %s");
     }
 
-    const char* runArgs[] = {
-        outputPath.data,
-        NULL,
-    };
+ERROR_CASE
+    return err;
+}
+
+ErrorCode run(ArgsList runArgs)
+{
+    ERROR_CHECKING();
+
+    assert(runArgs);
+
     pid_t run = vfork();
 
     if (run == -1)
@@ -85,9 +195,19 @@ ErrorCode CompileFile(const char path[static 1])
         HANDLE_ERRNO_ERROR("Error wait: %s");
     }
 
+ERROR_CASE
+    return err;
+}
+
+ErrorCode delete(const char path[static 1])
+{
+    ERROR_CHECKING();
+
+    assert(path);
+
     const char* deleteArgs[] = {
         "rm",
-        outputPath.data,
+        path,
         NULL,
     };
     pid_t delete = vfork();
@@ -103,47 +223,84 @@ ErrorCode CompileFile(const char path[static 1])
         HANDLE_ERRNO_ERROR("Error execvp: %s");
     }
 
-ERROR_CASE
-    StringDtor(&goodPath);
-    StringDtor(&outputPath);
+    if (wait(NULL) == -1)
+    {
+        HANDLE_ERRNO_ERROR("Error wait: %s");
+    }
 
+ERROR_CASE
     return err;
 }
 
-ResultString sanitizeDirectoryPath(const char path[static 1])
+ResultString cleanScriptRunnerComment(const char path[static 1], const char cshellPath[static 1])
 {
     ERROR_CHECKING();
 
     assert(path);
 
-    char goodPath[PATH_MAX + 1] = "";
+    String file = {};
+    String cshell = {};
+    String comment = {};
+    String newFile = {};
+    FILE* outFile = NULL;
 
-    if (!realpath(path, goodPath))
+    ResultString cshellResult = sanitizeFilePath(cshellPath);
+    CHECK_ERROR(cshellResult.errorCode);
+    cshell = cshellResult.value;
+
+    ResultString fileResult = StringReadFile(path);
+    CHECK_ERROR(fileResult.errorCode);
+    file = fileResult.value;
+
+    ResultString commentResult = StringCtor("#!");
+    CHECK_ERROR(commentResult.errorCode);
+    comment = commentResult.value;
+
+    CHECK_ERROR(StringAppendString(&comment, cshell));
+
+    char* commentPtr = strstr(file.data, comment.data);
+
+    if (commentPtr)
     {
-        HANDLE_ERRNO_ERROR("Error realpath for %s: %s", path);
+        for (size_t i = 0; i < comment.size; i++)
+        {
+            file.data[i] = ' ';
+        }
     }
 
-    size_t size = strlen(goodPath);
+    newFile = cshell;
+    cshell = (String){};
 
-    goodPath[size] = '/';
-    size++;
+    StringClear(&newFile);
+    CHECK_ERROR(StringAppend(&newFile, TEMP_FOLDER.data));
+    CHECK_ERROR(StringAppend(&newFile, path));
 
-    return StringCtorFromStr(StrCtorSize(goodPath, size));
+    char* slash = strchr(newFile.data + TEMP_FOLDER.size, '/');
+    while (slash)
+    {
+        *slash = '*';
+        slash = strchr(slash + 1, '/');
+    }
+
+    outFile = fopen(newFile.data, "w");
+    if (!outFile)
+    {
+        HANDLE_ERRNO_ERROR("Error fopen: %s");
+    }
+    fwrite(file.data, 1, file.size, outFile);
 
 ERROR_CASE
+    StringDtor(&file);
+    StringDtor(&cshell);
+    StringDtor(&comment);
+    if (outFile) fclose(outFile);
+
+    if (err == EVERYTHING_FINE)
+    {
+        return ResultStringCtor(newFile, EVERYTHING_FINE);
+    }
+
+    StringDtor(&newFile);
+
     return ResultStringCtor((String){}, err);
-}
-
-const char* getCompiler()
-{
-    ERROR_CHECKING();
-
-    const char* compiler = getenv("CC");
-    if (!compiler)
-    {
-        HANDLE_ERRNO_ERROR("Error getenv $(CC): %s");
-    }
-
-ERROR_CASE
-    return compiler;
 }

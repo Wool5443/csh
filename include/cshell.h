@@ -3,6 +3,6 @@
 
 #include "Logger.h"
 
-ErrorCode CompileFile(const char path[static 1]);
+ErrorCode CompileAndRunFile(const char path[static 1], const char* args[], const char cshellPath[static 1]);
 
 #endif // CHELL_H
