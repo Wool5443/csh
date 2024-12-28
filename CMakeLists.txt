@@ -13,4 +13,5 @@ set(SOURCE
 
 add_executable(${projectName} ${SOURCE})
 target_include_directories(${projectName} PRIVATE include)
-target_link_libraries(${projectName} PRIVATE cmlibLogger cmlibString cmlibVector)
+target_link_libraries(${projectName} PRIVATE cmlibLogger cmlibString cmlibVector cmlibIOUtils)
+target_compile_definitions(${projectName} PUBLIC DISABLE_LOGGING)

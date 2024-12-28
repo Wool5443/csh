@@ -6,8 +6,6 @@ int main(int argc, const char* argv[])
 {
     ERROR_CHECKING();
 
-    // LoggerDisable();
-
     if (argc < 2)
     {
         printf("Usage: %s <path to script file> args...\n", argv[0]);
