@@ -1,10 +1,15 @@
 #include <stdio.h>
 
+#include "ScratchBuf.h"
 #include "cshell.h"
 
 int main(int argc, const char* argv[])
 {
     ERROR_CHECKING();
+
+    ScratchInit(1024);
+
+    // LoggerInitConsole();
 
     if (argc < 2)
     {
@@ -14,7 +19,7 @@ int main(int argc, const char* argv[])
 
     LoggerFinish();
 
-    CHECK_ERROR(CompileAndRunFile(argv[1], argv + 2));
+    CHECK_ERROR(CompileAndRunFile(argv[1], argc - 2, argv + 2));
 
 ERROR_CASE
 

@@ -3,14 +3,22 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "ScratchBuf.h"
 #include "cshell.h"
 #include "Logger.h"
 #include "Vector.h"
 #include "String.h"
 #include "IOUtils.h"
 
+#define ARRAY_SIZE(array) sizeof(array) / sizeof(*(array))
+
+static const char COMPILER_ARG_QUOTE = '"';
+
 typedef const char** ArgsList;
 DECLARE_RESULT(ArgsList);
+
+typedef String* CompilerArgsList;
+DECLARE_RESULT(CompilerArgsList);
 
 typedef const char* Path;
 DECLARE_RESULT(Path);
@@ -18,13 +26,17 @@ DECLARE_RESULT(Path);
 ResultString cleanInterpreterComment(const Str sourcePath);
 
 const char* getCompiler();
-ResultArgsList argsListCtor(const char outputPath[static 1], const char* args[]);
-ErrorCode compile(ArgsList compileArgs);
+ResultArgsList gatherCommandLineArgs(const char outputPath[static 1], const int argc, const char* args[]);
+ErrorCode compile(CompilerArgsList compilerArgs);
 ErrorCode run(ArgsList runArgs);
 ErrorCode delete(const char path[static 1]);
 
+ResultCompilerArgsList gatherCompilerArgs(const Str sourcePath, const Str executablePath);
+ErrorCode gatherCompilerArgsImpl(const Str flagsName, CompilerArgsList* args, String sourceFile);
 
-ErrorCode CompileAndRunFile(const char path[static 1], const char* args[])
+void CompilerArgsListDtor(CompilerArgsList args);
+
+ErrorCode CompileAndRunFile(const char path[static 1], const int argc, const char* args[])
 {
     ERROR_CHECKING();
 
@@ -34,6 +46,7 @@ ErrorCode CompileAndRunFile(const char path[static 1], const char* args[])
     String cleanSourcePath = {};
     String executablePath = {};
     ArgsList runArgs = {};
+    CompilerArgsList compilerArgs = {};
 
     ResultString sourcePathResult = RealPath(path);
     CHECK_ERROR(sourcePathResult.errorCode);
@@ -49,26 +62,25 @@ ErrorCode CompileAndRunFile(const char path[static 1], const char* args[])
 
     CHECK_ERROR(StringAppend(&executablePath, ".exe"));
 
-    const char* compileArgs[] = {
-        getCompiler(),
-        cleanSourcePath.data,
-        "-O3",
-        "-o",
-        executablePath.data,
-        NULL,
-    };
-
-    ResultArgsList runArgsResult = argsListCtor(executablePath.data, args);
+    ResultArgsList runArgsResult = gatherCommandLineArgs(executablePath.data, argc, args);
     CHECK_ERROR(runArgsResult.errorCode);
     runArgs = runArgsResult.value;
 
-    CHECK_ERROR(compile(compileArgs));
+    ResultCompilerArgsList compilerArgsResult = gatherCompilerArgs(
+        StrCtorFromString(cleanSourcePath),
+        StrCtorFromString(executablePath)
+    );
+    CHECK_ERROR(compilerArgsResult.errorCode);
+    compilerArgs = compilerArgsResult.value;
+
+    CHECK_ERROR(compile(compilerArgs));
     CHECK_ERROR(run(runArgs));
     CHECK_ERROR(delete(executablePath.data));
     CHECK_ERROR(delete(cleanSourcePath.data));
 
 ERROR_CASE
     VecDtor(runArgs);
+    CompilerArgsListDtor(compilerArgs);
     StringDtor(&sourcePath);
     StringDtor(&executablePath);
     StringDtor(&cleanSourcePath);
@@ -90,13 +102,15 @@ ERROR_CASE
     return compiler;
 }
 
-ResultArgsList argsListCtor(const char outputPath[static 1], const char* args[])
+ResultArgsList gatherCommandLineArgs(const char outputPath[static 1], const int argc, const char* args[])
 {
     ERROR_CHECKING();
 
     assert(args);
 
     ArgsList list = {};
+
+    CHECK_ERROR(VecExpand(list, argc + 2), "Error expanding args list");
 
     const char** arg = args;
     CHECK_ERROR(VecAdd(list, outputPath));
@@ -116,11 +130,26 @@ ERROR_CASE
     return ResultArgsListCtor((ArgsList){}, err);
 }
 
-ErrorCode compile(ArgsList compileArgs)
+ErrorCode compile(CompilerArgsList compilerArgs)
 {
     ERROR_CHECKING();
 
-    assert(compileArgs);
+    assert(compilerArgs);
+
+    size_t argsNum = VecSize(compilerArgs);
+    char** args = {};
+    VecExpand(args, argsNum);
+
+    for (size_t i = 0; i < argsNum; i++)
+    {
+        CHECK_ERROR(VecAdd(args, compilerArgs[i].data));
+    }
+
+    for (size_t i = 0; i < argsNum; i++)
+    {
+        printf("%s ", args[i]);
+    }
+    printf("\n\n");
 
     pid_t compile = vfork();
 
@@ -130,17 +159,31 @@ ErrorCode compile(ArgsList compileArgs)
     }
     else if (compile == 0)
     {
-        execvp(compileArgs[0], (char**)compileArgs);
+        execvp(args[0], args);
 
         HANDLE_ERRNO_ERROR(ERROR_LINUX, "Error execvp: %s");
     }
 
-    if (wait(NULL) == -1)
+    int retCode = 0;
+
+    if (wait(&retCode) == -1)
     {
         HANDLE_ERRNO_ERROR(ERROR_LINUX, "Error wait: %s");
     }
 
+    if (retCode != 0)
+    {
+        err = ERROR_BAD_FILE;
+
+        printf("\n\nFailed to compile!!!\n");
+
+        ERROR_LEAVE();
+    }
+
+
 ERROR_CASE
+    VecDtor(args);
+
     return err;
 }
 
@@ -256,4 +299,120 @@ ERROR_CASE
     StringDtor(&newSourceFilePath);
 
     return ResultStringCtor((String){}, err);
+}
+
+ResultCompilerArgsList gatherCompilerArgs(const Str sourcePath, const Str executablePath)
+{
+    static const char* ARG_TYPES[] = {
+        "INCLUDE",
+        "LINK",
+        "FILES",
+    };
+
+    ERROR_CHECKING();
+
+    String sourceFile = {};
+    CompilerArgsList args = {};
+
+    const char* basicCompilerArgs[] = {
+        getCompiler(),
+        sourcePath.data,
+        "-O3",
+        "-DNDEBUG",
+        "-o",
+        executablePath.data,
+    };
+
+    VecCapacity(args);
+
+    CHECK_ERROR(VecExpand(args, ARRAY_SIZE(basicCompilerArgs)));
+
+    for (size_t i = 0; i < ARRAY_SIZE(basicCompilerArgs); i++)
+    {
+        ResultString argResult = StringCtor(basicCompilerArgs[i]);
+        CHECK_ERROR(argResult.errorCode);
+        CHECK_ERROR(VecAdd(args, argResult.value));
+    }
+
+    ResultString sourceFileResult = StringReadFile(sourcePath.data);
+    CHECK_ERROR(sourceFileResult.errorCode);
+    sourceFile = sourceFileResult.value;
+
+    for (size_t i = 0; i < ARRAY_SIZE(ARG_TYPES); i++)
+    {
+        CHECK_ERROR(gatherCompilerArgsImpl(StrCtor(ARG_TYPES[i]), &args, sourceFile));
+    }
+
+    CHECK_ERROR(VecAdd(args, (String){}));
+
+    StringDtor(&sourceFile);
+
+    return ResultCompilerArgsListCtor(args, EVERYTHING_FINE);
+
+ERROR_CASE
+    StringDtor(&sourceFile);
+    CompilerArgsListDtor(args);
+
+    return ResultCompilerArgsListCtor((CompilerArgsList){}, err);
+}
+
+ErrorCode gatherCompilerArgsImpl(const Str argType, CompilerArgsList* args, String sourceFile)
+{
+    ERROR_CHECKING();
+
+    char* flagsNamePtr = strstr(sourceFile.data, argType.data);
+
+    while (flagsNamePtr)
+    {
+        char* slashN = strchr(flagsNamePtr, '\n');
+        if (!slashN)
+        {
+            HANDLE_ERRNO_ERROR(ERROR_BAD_FILE, "No end of line in file???: %s");
+        }
+        *slashN = '\0';
+
+        char* current = strchr(flagsNamePtr, COMPILER_ARG_QUOTE);
+
+        while (current)
+        {
+            current++;
+
+            // current -> arg
+
+            char* endArg = strchr(current, COMPILER_ARG_QUOTE);
+
+            Str argStr = StrCtorSize(current, endArg - current);
+
+            ResultString argResult = StringCtorFromStr(argStr);
+            CHECK_ERROR(argResult.errorCode);
+
+            if ((err = VecAdd(*args, argResult.value)))
+            {
+                LogError("Failed to add arg: %s", argResult.value.data);
+                StringDtor(&argResult.value);
+                ERROR_LEAVE();
+            }
+
+            current = strchr(endArg + 1, COMPILER_ARG_QUOTE);
+        }
+
+        *slashN = '\n';
+        flagsNamePtr = strstr(flagsNamePtr + 1, argType.data);
+    }
+
+ERROR_CASE
+
+    return err;
+}
+
+void CompilerArgsListDtor(CompilerArgsList list)
+{
+    size_t size = VecSize(list);
+
+    for (size_t i = 0; i < size; i++)
+    {
+        StringDtor(&list[i]);
+    }
+
+    VecDtor(list);
 }
