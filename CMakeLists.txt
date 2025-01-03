@@ -10,6 +10,7 @@ add_subdirectory(cmlib)
 set(SOURCE
     "src/main.c"
     "src/cshell.c"
+    "src/GatherArgs.c"
 )
 
 add_executable(${projectName} ${SOURCE})
