@@ -9,7 +9,7 @@ int main(int argc, const char* argv[])
 
     ScratchInit(1024);
 
-    // LoggerInitConsole();
+    LoggerInitConsole();
 
     if (argc < 2)
     {

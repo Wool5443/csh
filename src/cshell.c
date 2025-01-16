@@ -11,7 +11,8 @@
 #include "GatherArgs.h"
 
 typedef const char* Path;
-DECLARE_RESULT(Path);
+DECLARE_RESULT_HEADER(Path);
+DECLARE_RESULT_SOURCE(Path);
 
 ResultString cleanInterpreterComment(const Str sourcePath);
 

@@ -1,4 +1,7 @@
 #include "GatherArgs.h"
+#include "Vector.h"
+
+DECLARE_RESULT_SOURCE(ArgsList);
 
 static const char* getCompiler();
 static ErrorCode gatherCompilerArgsImpl(const Str argType, CompilerArgsList* args, String sourceFile);
@@ -10,6 +13,7 @@ GatherCompilerArgs(const Str sourcePath, const Str executablePath)
         "INCLUDE",
         "LINK",
         "FILES",
+        "FLAGS",
     };
 
     ERROR_CHECKING();
@@ -25,8 +29,6 @@ GatherCompilerArgs(const Str sourcePath, const Str executablePath)
         "-o",
         executablePath.data,
     };
-
-    VecCapacity(args);
 
     CHECK_ERROR(VecExpand(args, ARRAY_SIZE(basicCompilerArgs)));
 
