@@ -4,7 +4,7 @@
 #include "CompilerArgsList.h"
 
 typedef const char** ArgsList;
-DECLARE_RESULT(ArgsList);
+DECLARE_RESULT_HEADER(ArgsList);
 
 static const char COMPILER_ARG_QUOTE = '"';
 

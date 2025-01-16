@@ -4,7 +4,7 @@
 #include "String.h"
 
 typedef String* CompilerArgsList;
-DECLARE_RESULT(CompilerArgsList);
+DECLARE_RESULT_HEADER(CompilerArgsList);
 
 void CompilerArgsListDtor(CompilerArgsList list);
 

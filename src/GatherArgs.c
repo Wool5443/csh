@@ -1,4 +1,7 @@
 #include "GatherArgs.h"
+#include "Vector.h"
+
+DECLARE_RESULT_SOURCE(ArgsList);
 
 static const char* getCompiler();
 static ErrorCode gatherCompilerArgsImpl(const Str argType, CompilerArgsList* args, String sourceFile);
@@ -10,6 +13,7 @@ GatherCompilerArgs(const Str sourcePath, const Str executablePath)
         "INCLUDE",
         "LINK",
         "FILES",
+        "FLAGS",
     };
 
     ERROR_CHECKING();
@@ -25,8 +29,6 @@ GatherCompilerArgs(const Str sourcePath, const Str executablePath)
         "-o",
         executablePath.data,
     };
-
-    VecCapacity(args);
 
     CHECK_ERROR(VecExpand(args, ARRAY_SIZE(basicCompilerArgs)));
 
@@ -69,17 +71,17 @@ GatherCommandLineArgs(const char outputPath[static 1],
 
     ArgsList list = {};
 
-    CHECK_ERROR(VecExpand(list, argc + 2), "Error expanding args list");
+    CHECK_ERROR_LOG(VecExpand(list, argc + 2), "Error expanding args list");
 
     const char** arg = args;
-    CHECK_ERROR(VecAdd(list, outputPath));
+    CHECK_ERROR_LOG(VecAdd(list, outputPath));
 
     while (*arg)
     {
-        CHECK_ERROR(VecAdd(list, *arg), "Error adding arg: %s", *arg);
+        CHECK_ERROR_LOG(VecAdd(list, *arg), "Error adding arg: %s", *arg);
         arg++;
     }
-    CHECK_ERROR(VecAdd(list, NULL), "Error adding NULL");
+    CHECK_ERROR_LOG(VecAdd(list, NULL), "Error adding NULL");
 
     return ResultArgsListCtor(list, EVERYTHING_FINE);
 

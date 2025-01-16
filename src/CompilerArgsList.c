@@ -1,6 +1,8 @@
 #include "CompilerArgsList.h"
 #include "Vector.h"
 
+DECLARE_RESULT_SOURCE(CompilerArgsList);
+
 void CompilerArgsListDtor(CompilerArgsList list)
 {
     size_t size = VecSize(list);
