@@ -7,9 +7,9 @@ int main(int argc, const char* argv[])
 {
     ERROR_CHECKING();
 
-    ScratchInit(1024);
+    logger_init_console();
 
-    LoggerInitConsole();
+    scratch_init(1024);
 
     if (argc < 2)
     {
@@ -17,12 +17,8 @@ int main(int argc, const char* argv[])
         ERROR_LEAVE();
     }
 
-    LoggerFinish();
-
-    CHECK_ERROR(CompileAndRunFile(argv[1], argc - 2, argv + 2));
+    CHECK_ERROR(compile_and_run_file(argv[1], argc - 2, argv + 2));
 
 ERROR_CASE
-
-    LoggerFinish();
     return err;
 }

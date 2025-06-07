@@ -1,9 +1,11 @@
-#!/usr/bin/csh
+#!/usr/bin/env csh
 
 //INCLUDE "-I./include" "-I./cmlib/Vector" "-I./cmlib/Logger"
 //LINK "-lm"
 //FILES "aboba.c"
 //FILES "cmlib/Logger/src/Logger.c"
+//FILES "cmlib/Vector/src/Vector.c"
+//FLAGS "-fsanitize=address"
 
 #include <stdio.h>
 #include "Vector.h"
@@ -19,11 +21,11 @@ int main(int argc, const char* argv[])
 
     int* numbers = {};
 
-    VecAdd(numbers, 10);
+    vec_add(numbers, 10);
 
     printf("%d\n", numbers[0]);
 
-    VecDtor(numbers);
+    vec_dtor(numbers);
 
     return 0;
 }

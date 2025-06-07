@@ -8,112 +8,112 @@
 #include "Vector.h"
 #include "String.h"
 #include "IO.h"
-#include "GatherArgs.h"
+#include "Gather_args.h"
 
 typedef const char* Path;
 DECLARE_RESULT_HEADER(Path);
 DECLARE_RESULT_SOURCE(Path);
 
-ResultString cleanInterpreterComment(const Str sourcePath);
+static Result_String clean_interpreter_comment(const Str source_path);
 
-ErrorCode compile(CompilerArgsList compilerArgs);
-ErrorCode run(ArgsList runArgs);
-ErrorCode delete(const char path[static 1]);
+static Error_code compile(Compiler_args_list compiler_args);
+static Error_code run(Args_list run_args);
+static Error_code delete(const char* path);
 
-ErrorCode CompileAndRunFile(const char path[static 1], const int argc, const char* args[])
+Error_code compile_and_run_file(const char* path, const int argc, const char* args[])
 {
     ERROR_CHECKING();
 
     assert(path);
 
-    String sourcePath = {};
-    String cleanSourcePath = {};
-    String executablePath = {};
-    ArgsList runArgs = {};
-    CompilerArgsList compilerArgs = {};
+    String source_path = {};
+    String clean_source_path = {};
+    String executable_path = {};
+    Args_list run_args = {};
+    Compiler_args_list compiler_args = {};
 
-    ResultString sourcePathResult = RealPath(path);
-    CHECK_ERROR(sourcePathResult.errorCode);
-    sourcePath = sourcePathResult.value;
+    Result_String source_path_result = real_path(path);
+    CHECK_ERROR(source_path_result.error_code);
+    source_path = source_path_result.value;
 
-    ResultString cleanSourcePathResult = cleanInterpreterComment(StrCtorFromString(sourcePath));
-    CHECK_ERROR(cleanSourcePathResult.errorCode);
-    cleanSourcePath = cleanSourcePathResult.value;
+    Result_String clean_source_path_result = clean_interpreter_comment(str_ctor_string(source_path));
+    CHECK_ERROR(clean_source_path_result.error_code);
+    clean_source_path = clean_source_path_result.value;
 
-    ResultString executablePathResult = StringCopy(cleanSourcePath);
-    CHECK_ERROR(executablePathResult.errorCode);
-    executablePath = executablePathResult.value;
+    Result_String executable_path_result = string_copy(clean_source_path);
+    CHECK_ERROR(executable_path_result.error_code);
+    executable_path = executable_path_result.value;
 
-    CHECK_ERROR(StringAppend(&executablePath, ".exe"));
+    CHECK_ERROR(string_append(&executable_path, ".exe"));
 
-    ResultArgsList runArgsResult = GatherCommandLineArgs(executablePath.data, argc, args);
-    CHECK_ERROR(runArgsResult.errorCode);
-    runArgs = runArgsResult.value;
+    Result_Args_list run_args_result = gather_command_line_args(executable_path.data, argc, args);
+    CHECK_ERROR(run_args_result.error_code);
+    run_args = run_args_result.value;
 
-    ResultCompilerArgsList compilerArgsResult = GatherCompilerArgs(
-        StrCtorFromString(cleanSourcePath),
-        StrCtorFromString(executablePath)
+    Result_Compiler_args_list compiler_args_result = gather_compiler_args(
+        str_ctor_string(clean_source_path),
+        str_ctor_string(executable_path)
     );
-    CHECK_ERROR(compilerArgsResult.errorCode);
-    compilerArgs = compilerArgsResult.value;
+    CHECK_ERROR(compiler_args_result.error_code);
+    compiler_args = compiler_args_result.value;
 
-    CHECK_ERROR(compile(compilerArgs));
-    CHECK_ERROR(run(runArgs));
-    CHECK_ERROR(delete(executablePath.data));
-    CHECK_ERROR(delete(cleanSourcePath.data));
+    CHECK_ERROR(compile(compiler_args));
+    CHECK_ERROR(run(run_args));
+    CHECK_ERROR(delete(executable_path.data));
+    CHECK_ERROR(delete(clean_source_path.data));
 
 ERROR_CASE
-    VecDtor(runArgs);
-    CompilerArgsListDtor(compilerArgs);
-    StringDtor(&sourcePath);
-    StringDtor(&executablePath);
-    StringDtor(&cleanSourcePath);
+    vec_dtor(run_args);
+    compiler_args_list_dtor(compiler_args);
+    string_dtor(&source_path);
+    string_dtor(&executable_path);
+    string_dtor(&clean_source_path);
 
     return err;
 }
 
-ErrorCode compile(CompilerArgsList compilerArgs)
+Error_code compile(Compiler_args_list compiler_args)
 {
     ERROR_CHECKING();
 
-    assert(compilerArgs);
+    assert(compiler_args);
 
-    size_t argsNum = VecSize(compilerArgs);
+    size_t args_num = vec_size(compiler_args);
     char** args = {};
-    VecExpand(args, argsNum);
+    vec_reserve(args, args_num);
 
-    for (size_t i = 0; i < argsNum; i++)
+    for (size_t i = 0; i < args_num; i++)
     {
-        CHECK_ERROR(VecAdd(args, compilerArgs[i].data));
+        CHECK_ERROR(vec_add(args, compiler_args[i].data));
     }
 
-    for (size_t i = 0; i < argsNum; i++)
+    for (size_t i = 0; i < args_num; i++)
     {
         printf("%s ", args[i]);
     }
     printf("\n\n");
 
-    pid_t compile = vfork();
+    pid_t compile_pid = vfork();
 
-    if (compile == -1)
+    if (compile_pid == -1)
     {
         HANDLE_ERRNO_ERROR(ERROR_LINUX, "Error vfork: %s");
     }
-    else if (compile == 0)
+    else if (compile_pid == 0)
     {
         execvp(args[0], args);
 
         HANDLE_ERRNO_ERROR(ERROR_LINUX, "Error execvp: %s");
     }
 
-    int retCode = 0;
+    int ret_code = 0;
 
-    if (wait(&retCode) == -1)
+    if (wait(&ret_code) == -1)
     {
         HANDLE_ERRNO_ERROR(ERROR_LINUX, "Error wait: %s");
     }
 
-    if (retCode != 0)
+    if (ret_code != 0)
     {
         err = ERROR_BAD_FILE;
 
@@ -122,28 +122,27 @@ ErrorCode compile(CompilerArgsList compilerArgs)
         ERROR_LEAVE();
     }
 
-
 ERROR_CASE
-    VecDtor(args);
+    vec_dtor(args);
 
     return err;
 }
 
-ErrorCode run(ArgsList runArgs)
+static Error_code run(Args_list run_args)
 {
     ERROR_CHECKING();
 
-    assert(runArgs);
+    assert(run_args);
 
-    pid_t run = vfork();
+    pid_t run_pid = vfork();
 
-    if (run == -1)
+    if (run_pid == -1)
     {
         HANDLE_ERRNO_ERROR(ERROR_LINUX, "Error vfork: %s");
     }
-    else if (run == 0)
+    else if (run_pid == 0)
     {
-        execvp(runArgs[0], (char**)runArgs);
+        execvp(run_args[0], (char**)run_args);
 
         HANDLE_ERRNO_ERROR(ERROR_LINUX, "Error execvp: %s");
     }
@@ -157,26 +156,26 @@ ERROR_CASE
     return err;
 }
 
-ErrorCode delete(const char path[static 1])
+static Error_code delete(const char* path)
 {
     ERROR_CHECKING();
 
     assert(path);
 
-    const char* deleteArgs[] = {
+    const char* delete_args[] = {
         "rm",
         path,
         NULL,
     };
-    pid_t delete = vfork();
+    pid_t delete_pid = vfork();
 
-    if (delete == -1)
+    if (delete_pid == -1)
     {
         HANDLE_ERRNO_ERROR(ERROR_LINUX, "Error vfork: %s");
     }
-    else if (delete == 0)
+    else if (delete_pid == 0)
     {
-        execvp(deleteArgs[0], (char**)deleteArgs);
+        execvp(delete_args[0], (char**)delete_args);
 
         HANDLE_ERRNO_ERROR(ERROR_LINUX, "Error execvp: %s");
     }
@@ -190,55 +189,57 @@ ERROR_CASE
     return err;
 }
 
-ResultString cleanInterpreterComment(const Str sourcePath)
+static Result_String clean_interpreter_comment(const Str source_path)
 {
     ERROR_CHECKING();
 
-    assert(sourcePath.data);
+    assert(source_path.data);
 
-    String sourceFile = {};
-    String newSourceFilePath = {};
-    FILE* newSourceFile = NULL;
+    String source_file = {};
+    String new_source_file_path = {};
+    FILE* new_source_file = NULL;
 
-    ResultString sourceFileResult = StringReadFile(sourcePath.data);
-    CHECK_ERROR(sourceFileResult.errorCode);
-    sourceFile = sourceFileResult.value;
+    Result_String source_file_result = read_file(source_path.data);
+    CHECK_ERROR(source_file_result.error_code);
+    source_file = source_file_result.value;
 
-    Str sourceFolder = GetFolderStr(sourcePath);
+    Result_Str source_folder_result = get_folder_str(source_path);
+    CHECK_ERROR(source_folder_result .error_code);
+    Str source_folder = source_folder_result.value;
 
-    ResultString newSourceFilePathResult = StringCtorFromStr(sourceFolder);
-    CHECK_ERROR(newSourceFilePathResult.errorCode);
-    newSourceFilePath = newSourceFilePathResult.value;
+    Result_String new_source_file_path_result = string_ctor_str(source_folder);
+    CHECK_ERROR(new_source_file_path_result.error_code);
+    new_source_file_path = new_source_file_path_result.value;
 
-    CHECK_ERROR(StringAppend(&newSourceFilePath, ".TEMP_RUN_"));
+    CHECK_ERROR(string_append(&new_source_file_path, ".TEMP_RUN_"));
 
     // after folder comes file name
-    CHECK_ERROR(StringAppend(&newSourceFilePath, sourceFolder.data + sourceFolder.size));
+    CHECK_ERROR(string_append(&new_source_file_path, source_folder.data + source_folder.size));
 
-    char* commentPtr = strstr(sourceFile.data, "#!");
-    if (commentPtr)
+    char* comment_ptr = strstr(source_file.data, "#!");
+    if (comment_ptr)
     {
-        commentPtr[0] = '/';
-        commentPtr[1] = '/';
+        comment_ptr[0] = '/';
+        comment_ptr[1] = '/';
     }
 
-    newSourceFile = fopen(newSourceFilePath.data, "w");
-    if (!newSourceFile)
+    new_source_file = fopen(new_source_file_path.data, "w");
+    if (!new_source_file)
     {
         HANDLE_ERRNO_ERROR(ERROR_LINUX, "Error fopen: %s");
     }
-    fwrite(sourceFile.data, 1, sourceFile.size, newSourceFile);
+    fwrite(source_file.data, 1, source_file.size, new_source_file);
 
 ERROR_CASE
-    StringDtor(&sourceFile);
-    if (newSourceFile) fclose(newSourceFile);
+    string_dtor(&source_file);
+    if (new_source_file) fclose(new_source_file);
 
     if (err == EVERYTHING_FINE)
     {
-        return ResultStringCtor(newSourceFilePath, EVERYTHING_FINE);
+        return Result_String_ctor(new_source_file_path, EVERYTHING_FINE);
     }
 
-    StringDtor(&newSourceFilePath);
+    string_dtor(&new_source_file_path);
 
-    return ResultStringCtor((String){}, err);
+    return Result_String_ctor((String){}, err);
 }
